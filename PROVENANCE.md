@@ -169,7 +169,7 @@ actually rendered.
 
 ---
 
-## meshes-v3 — one material per structure, plus a ghost carrier (2026-07-25)
+## meshes-v3 — one material per structure, plus a ghost carrier (2026-07-25) — SUPERSEDED BY v4
 
 `meshes-v2` gave each structure **class** a material. That is enough to look right
 and not enough to *interact*: Filament's `gltfio` builds one `MaterialInstance` per glTF
@@ -220,3 +220,37 @@ the one thing the node exists for. At 1e-6 of a ~1.8-unit body it is far below a
 any camera distance.
 
 Consumers must skip it by name. It must never resolve to a card.
+
+
+---
+
+## meshes-v4 — the highlight carrier (2026-07-25)
+
+**Use this vintage. `meshes-v3` is superseded and was never consumed by a build.**
+
+v3 shipped a carrier for the *ghost* material only. Building the viewer against it
+surfaced the gap: `MaterialInstance` exposes **setters but no getters**, so a structure
+whose material has been mutated cannot be read back and restored. Exact restore therefore
+requires *swapping instances* rather than mutating them — which needs a highlight instance
+to swap **to**, by exactly the same argument that produced the ghost carrier.
+
+v4 gives the carrier mesh **two primitives** instead of one, on the same single node:
+
+| Primitive | Material | Mode | Role |
+|---|---|---|---|
+| 0 | `__veast_ghost` | BLEND | everything unselected |
+| 1 | `__veast_highlight` | OPAQUE | the selected structure |
+
+Both are reachable as `getMaterialInstanceAt(carrierEntity, 0 | 1)`. The highlight is the
+viewers' `hlMat` — black base, teal `#2fd9c4` emissive at 0.85 — identical on every
+plane, and OPAQUE deliberately: a selected structure should read solid and lit, not
+see-through.
+
+The bake is now **idempotent**. It strips any pre-existing carrier before rebuilding, and
+asserts that carriers are trailing rather than assuming it. This was not theoretical: baking
+v4 from the v3 files first produced 758 fascia structures instead of 757, because the v3
+carrier was counted as anatomy and a second one appended. The structure counts in these
+tables are what caught it.
+
+Structure counts are unchanged from v1 in every plane — 757 / 475 / 673 / 277 / 126 / 583 —
+and the BIN chunk remains byte-identical.
