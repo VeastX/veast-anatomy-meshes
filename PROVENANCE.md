@@ -105,7 +105,8 @@ magic `glTF` (`0x676c5446`), glTF version 2, and the header length field matchin
 - Generator on every mesh: `Khronos glTF Blender I/O v5.1.20`
 - `extensionsUsed`: `None` on all six — **no Draco/meshopt compression is applied.**
   Compression is untried headroom if PL-2's device profiling shows load time is a problem.
-- Single material per mesh; no textures or images (`images: 0`, `textures: 0`).
+- No textures or images on any mesh (`images: 0`, `textures: 0`).
+- Material count: one per mesh in `meshes-v1`; per-structure-class from `meshes-v2` (see below).
 - Git LFS is **not** used. The largest blob is 12.88 MB, well under GitHub's 50 MB
   warning threshold, so plain git objects avoid an extra tooling dependency.
 
@@ -114,3 +115,53 @@ magic `glTF` (`0x676c5446`), glTF version 2, and the header length field matchin
 These are modified CC BY-SA 4.0 meshes. See `NOTICE.md`. Publishing this repository
 publicly is the §3(b) obligation tracked by spec phase **PL-1** — do not treat this file
 as evidence that the obligation is discharged.
+
+
+---
+
+## meshes-v2 — per-structure materials (2026-07-26)
+
+`meshes-v1` shipped **one material on every mesh**, named `veast_muscle`, dark red
+(`baseColorFactor [0.1706, 0.0049, 0.0039]`). Every bone, vessel, nerve and organ in the
+atlas therefore rendered as red muscle.
+
+That was never a defect in the geometry — it is what the source carried. The colours that
+were reviewed and approved lived in the **JavaScript** of `pipeline/out/poc/*_viewer.html`,
+which assigned a Three.js material per structure at load time. Extracting the embedded GLB
+(the `meshes-v1` decision recorded above) necessarily left that behind, because it was
+never in the file.
+
+`meshes-v2` bakes those same palettes into the assets. **Only the glTF JSON chunk was
+rewritten** — `materials[]` gained one entry per structure class and each primitive was
+pointed at the class its node name resolves to. The BIN chunk was verified byte-identical
+on every mesh after the round-trip. No geometry, node, accessor or buffer view was touched,
+and no re-export, re-decimation or Blender round-trip occurred. Node names are unchanged, so
+tap resolution is unaffected.
+
+| Plane | Mesh | Materials | Breakdown |
+|---|---|---:|---|
+| 2 | Fascia | 1 | **unchanged, byte-identical to v1** |
+| 3 | Muscle | 1 | **unchanged, byte-identical to v1** |
+| 4 | Circulatory | 3 | artery 425 · vein 231 · heart 17 |
+| 5 | Skeleton | 1 | bone 277 |
+| 6 | Visceral | 9 | digestive 43 · respiratory 32 · reproductive 14 · endocrine 11 · urinary 8 · immune 6 · serous 6 · lung 5 · diaphragm 1 |
+| 7 | Neural | 6 | brain 268 · nerve 246 · spinal_cord 30 · sense_organ 29 · autonomic 6 · meninges 4 |
+
+Fascia and Muscle are unchanged **deliberately**. Their viewers never override the base
+material either: red is correct for muscle, and the fascia viewer differentiates by lighting
+a *selected myofascial line* rather than by recolouring the body. Baking a colour into fascia
+would not have made it distinguishable from muscle; only the line-selection interaction does.
+
+Three materials are translucent, each for a reason recorded in the viewer source: **lung**
+(alpha 0.20) because lit solid the two lobes bury the 28-branch bronchial tree modelled
+inside them; **serous** (0.13) for pleura and mesenteries; **diaphragm** (0.42, higher because
+it is muscle and not a membrane); and in Neural, **meninges** (0.16) because the spinal dura
+is an 18k-vertex sheath that otherwise renders as a solid white bar hiding the cord. These use
+glTF `alphaMode: BLEND`, which is why the palette was baked into the asset rather than
+applied at runtime — a material the file declares `OPAQUE` cannot be made translucent by
+a renderer after load.
+
+Colours were converted sRGB → linear on the way in, since glTF factors are linear while the
+viewer's hex literals are sRGB. Verified against v1: its linear
+`[0.1706, 0.0049, 0.0039]` round-trips to sRGB `#74100D`, the dark blood red the app
+actually rendered.
