@@ -119,7 +119,7 @@ as evidence that the obligation is discharged.
 
 ---
 
-## meshes-v2 — per-structure materials (2026-07-26)
+## meshes-v2 — per-structure-CLASS materials (2026-07-25)
 
 `meshes-v1` shipped **one material on every mesh**, named `veast_muscle`, dark red
 (`baseColorFactor [0.1706, 0.0049, 0.0039]`). Every bone, vessel, nerve and organ in the
@@ -165,3 +165,58 @@ Colours were converted sRGB → linear on the way in, since glTF factors are lin
 viewer's hex literals are sRGB. Verified against v1: its linear
 `[0.1706, 0.0049, 0.0039]` round-trips to sRGB `#74100D`, the dark blood red the app
 actually rendered.
+
+
+---
+
+## meshes-v3 — one material per structure, plus a ghost carrier (2026-07-25)
+
+`meshes-v2` gave each structure **class** a material. That is enough to look right
+and not enough to *interact*: Filament's `gltfio` builds one `MaterialInstance` per glTF
+material, so recolouring the tapped bone would have recoloured all 277 bones at once.
+
+`meshes-v3` therefore emits **one material per structure** — 2,891 in total across the
+six meshes — each carrying its class's appearance. Same JSON-chunk-only edit; the BIN
+chunk was read back and verified byte-identical on all six again.
+
+| Plane | Structures | Materials | Bytes v2 → v3 |
+|---|---:|---:|---|
+| 2 Fascia | 757 | 758 | 13,509,132 → 13,674,120 |
+| 3 Muscle | 475 | 476 | 9,411,764 → 9,514,448 |
+| 4 Circulatory | 673 | 674 | 9,097,896 → 9,282,916 |
+| 5 Skeleton | 277 | 278 | 4,971,836 → 5,024,612 |
+| 6 Visceral | 126 | 127 | 4,946,680 → 4,970,708 |
+| 7 Neural | 583 | 584 | 11,602,200 → 11,737,280 |
+
+Total +664 KB across 51 MB (+1.3%). Fascia and Muscle keep the exact material the file
+shipped with, copied verbatim rather than rebuilt from a hex, so they stay pixel-identical
+to v1 and v2 — red IS muscle, and their viewers never overrode it either.
+
+### The ghost carrier — read this before deleting it
+
+Each mesh has one extra node named `__veast_ghost_carrier`, scaled to 1e-6, carrying a
+BLEND material named `__veast_ghost`. **It is not anatomy.** It exists because of a hard
+constraint:
+
+Ghosting the unselected body needs transparency, and a material the file declares
+`OPAQUE` **cannot be made translucent after load** — gltfio compiles the blend mode into
+the material variant. Two non-options followed:
+
+- setting alpha on a resting material does nothing; it is OPAQUE
+- baking *everything* BLEND instead would disable depth-write, and 2,891 interpenetrating
+  structures would then sort back-to-front and occlude each other wrongly — bone rendering
+  through bone
+
+So the ghost has to be a separate, pre-baked BLEND material swapped in at runtime. But an
+**unreferenced** glTF material never receives a `MaterialInstance`, and there is no
+`createInstance` path available (`engine.createMaterial` needs a compiled `.filamat`;
+Filament's `matc` is not in the project). The carrier is what gives that material a
+referenced primitive, and therefore an instance the app can borrow.
+
+It reuses mesh 0's existing accessors, so **no new binary data is written** — which is why
+the BIN chunk is still byte-identical. The scale is 1e-6 rather than 0 because an exactly
+zero scale is a degenerate transform that a renderer may cull outright, which would destroy
+the one thing the node exists for. At 1e-6 of a ~1.8-unit body it is far below a pixel at
+any camera distance.
+
+Consumers must skip it by name. It must never resolve to a card.
